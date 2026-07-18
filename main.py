@@ -1,12 +1,22 @@
 from flask import Flask, request, render_template, redirect, url_for, send_file
 from markupsafe import escape
-import os
+import os, uuid
 import subprocess
+from flask_bootstrap import Bootstrap5
+from flask_wtf import FlaskForm, CSRFProtect
+from wtforms import StringField, SubmitField
+from wtforms.validators import DataRequired
+from forms import URLForm
+from dotenv import load_dotenv
 
 UPLOAD_DIR = "uploads"
-DOWNLAOD_DIR = "downloads"
+DOWNLOAD_DIR = "downloads"
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")
+
+bootstrap = Bootstrap5(app)
+csrf = CSRFProtect(app)
 
 @app.get("/")
 def welcome():
@@ -17,14 +27,15 @@ def welcome():
 def hello(name=None):
     return render_template('hello.html', person=name)
 
-@app.post("/upload")
-def upload_txt():
-    url = request.args.get("url", None)
-    f = request.files["file"]
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    f.save(os.path.join(UPLOAD_DIR, "uploaded.txt"))
+@app.route("/app", methods=["GET", "POST"])
+def main_form():
+    form = URLForm()
 
-    return "Uploaded"
+    if form.validate_on_submit():
+        url = form.url.data
+        return redirect(url_for("download_video", url=url))
+
+    return render_template("main_form.html", form=form)
 
 @app.get("/shelltest")
 def shelltest():
@@ -34,3 +45,33 @@ def shelltest():
     app.logger.debug("SHELL COMMAND CHAL GAYA OYEEE")
 
     return render_template("shelltest.html", out=out)
+
+@app.route('/download-video', methods=['GET', 'POST'])
+def download_video():
+    url = request.args.get('url') or request.form.get('url')
+    if not url:
+        return "No URL provided", 400
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    filepath = os.path.join(DOWNLOAD_DIR, f"{uuid.uuid4()}.mp4")
+
+    result = subprocess.run(
+        ["yt-dlp", "-o", filepath, "--merge-output-format", "mp4", "-f",
+         "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", url],
+        capture_output=True, text=True
+    )
+
+    if result.returncode != 0:
+        app.logger.error(f"yt-dlp failed: {result.stderr}")
+        return "Download failed", 500
+
+    response = send_file(filepath, as_attachment=True, download_name="video.mp4")
+
+    @response.call_on_close
+    def cleanup():
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+
+    return response
