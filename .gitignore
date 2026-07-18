@@ -1,7 +1,5 @@
-__pycache__
-venv
-
 uploads
 downloads
 
 .env
+*.exe
