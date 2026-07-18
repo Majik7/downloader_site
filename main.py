@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, send_file
+from flask import Flask, request, render_template, redirect, url_for, send_file, after_this_request
 from markupsafe import escape
 import os, uuid
 import subprocess
@@ -48,6 +48,13 @@ def shelltest():
 
 @app.route('/download-video', methods=['GET', 'POST'])
 def download_video():
+    for f in os.listdir(DOWNLOAD_DIR):
+        try:
+            os.remove(os.path.join(DOWNLOAD_DIR, f))
+            app.logger.debug(f"Deleting file {f}")
+        except OSError:
+            pass
+    
     url = request.args.get('url') or request.form.get('url')
     if not url:
         return "No URL provided", 400
@@ -66,12 +73,5 @@ def download_video():
         return "Download failed", 500
 
     response = send_file(filepath, as_attachment=True, download_name="video.mp4")
-
-    @response.call_on_close
-    def cleanup():
-        try:
-            os.remove(filepath)
-        except OSError:
-            pass
 
     return response
